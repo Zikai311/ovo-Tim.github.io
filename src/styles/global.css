@@ -241,6 +241,18 @@ pre > code {
   color: inherit;
 }
 
+/* zebraw HTML output: per-line <pre>s; don't paint each as a pill */
+.zebraw-code-block pre {
+  background-color: transparent;
+  border-radius: 0;
+  overflow: visible;
+}
+.zebraw-code-block {
+  border-radius: var(--md-sys-shape-medium);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 blockquote {
   border-left: 4px solid var(--md-sys-color-primary);
   padding: 0 0 0 1em;
