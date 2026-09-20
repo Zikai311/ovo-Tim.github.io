@@ -1,5 +1,8 @@
 
 #import "../packages/zebraw.typ": *
+#import "@preview/calloutly:1.2.0": (
+  colors, get-icon, is-callout-kind, resolve-callout-options, resolve-color, resolve-render-style, resolve-title,
+)
 #import "@preview/shiroa:0.2.3": is-html-target, is-pdf-target, is-web-target, plain-text, templates
 #import templates: *
 #import "mod.typ": *
@@ -191,6 +194,49 @@
   body
 }
 
+/// Callout styling (calloutly).
+///
+/// Typst's HTML export drops block strokes and fills as well as text fill,
+/// weight and size, so calloutly's own rendering loses the accent bar, the
+/// colored title and the spacing. On the HTML target, re-render callout
+/// figures as semantic HTML styled by the site stylesheet instead; other
+/// targets keep calloutly's output unchanged.
+#let callout-rules(body) = {
+  show figure: it => if is-callout-kind(it.kind) and sys-is-html-target {
+    let type = it.kind.slice("callout-".len())
+    let opts = resolve-callout-options(it.supplement)
+    let style = resolve-render-style(opts.style, auto)
+    let accent = resolve-color(style, type, opts.color)
+    let icon = if opts.icon != auto { opts.icon } else { get-icon(style, type, accent) }
+    let title = resolve-title(type, opts.title)
+    html.elem(
+      "aside",
+      attrs: (
+        class: "callout callout-" + type,
+        style: "--callout-color: " + accent.to-hex(),
+      ),
+      {
+        html.elem(
+          "div",
+          attrs: (class: "callout-title"),
+          {
+            html.elem("span", attrs: (class: "callout-icon"), icon)
+            html.elem("span", title)
+          },
+        )
+        html.elem(
+          "div",
+          attrs: (class: "callout-body"),
+          if opts.body == none { it.body } else { opts.body },
+        )
+      },
+    )
+  } else {
+    it
+  }
+  body
+}
+
 #let visual-rules(body) = {
   import "env.typ": url-base
   // Resolves the path to the image source
@@ -275,6 +321,8 @@
     show: if math-render == "svg" { svg-equation-rules } else { equation-rules }
     // code block setting
     show: code-block-rules
+    // callout setting
+    show: callout-rules
     // visualization setting
     show: visual-rules
 
