@@ -622,3 +622,38 @@ svg.typst-doc .typst-content-hint {
 .prose div[role="none"] > .typst-content-link.shiroa-heading-hash {
   display: none !important;
 }
+
+/* Callouts (calloutly) ----------------------------------------------------- */
+aside.callout {
+  --callout-color: var(--accent);
+  border-left: 0.25em solid var(--callout-color);
+  border-radius: 4pt;
+  padding: 0.8em 1em;
+  margin-block: 1.2em;
+}
+
+aside.callout .callout-title {
+  color: var(--callout-color);
+  font-weight: 700;
+  font-size: 1.1em;
+}
+
+aside.callout .callout-icon img,
+aside.callout .callout-icon svg {
+  height: 1em;
+  width: 1em;
+  vertical-align: -0.15em;
+  margin-right: 0.45em;
+}
+
+aside.callout .callout-body {
+  margin-block-start: 1em;
+}
+
+aside.callout .callout-body > :first-child {
+  margin-block-start: 0;
+}
+
+aside.callout .callout-body > :last-child {
+  margin-block-end: 0;
+}
