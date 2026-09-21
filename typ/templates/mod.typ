@@ -1,7 +1,7 @@
 
 #import "@preview/fletcher:0.5.7"
 #import "target.typ": sys-is-html-target
-#import "theme.typ": theme-frame, default-theme
+#import "theme.typ": default-theme, theme-frame
 #import "@preview/shiroa:0.2.3": plain-text, templates
 #import templates: get-label-disambiguator, label-disambiguator, make-unique-label
 
@@ -42,9 +42,7 @@
 }
 
 #let blog-tags = (
-  finance: "Finance",
   math: "Math",
-  poem: "Poem",
   programming: "Programming",
   software: "Software",
   network: "Network",
@@ -52,12 +50,9 @@
   tooling: "Tooling",
   linux: "Linux",
   dev-ops: "DevOps",
-  compiler: "Compiler",
-  music-theory: "Music Theory",
-  tinymist: "Tinymist",
-  golang: "Golang",
   typst: "Typst",
   misc: "Miscellaneous",
+  dl: "Deep Learning",
 )
 
 #let archive-tags = (
