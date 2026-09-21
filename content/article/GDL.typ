@@ -12,9 +12,9 @@
   ),
 )
 
-Most of the time we consider deep learning an engineering problem -- we are told what works what doesn't, what
+Most of the time we consider deep learning as an engineering problem -- we are told what works what doesn't, what
 standard solution is to a specific problem.
-But very few people ask why. Geometric Deep Learning gives us the math tool to understand why all those famous architectures, including CNN, LSTM, Transformer and so on, work better than, say, plain MLP.
+But very few people ask why. Geometric Deep Learning provides us with the mathematical tools to understand why all those famous architectures, including CNN, LSTM, Transformer etc. work better than plain MLP.
 
 To further explain how it works and why it is useful, we will skip all the math in the front part of #link("https://geometricdeeplearning.com/book/")[Original _Geometric Deep Learning_ book] and give you a quick walk-through to derive CNN from shift-equivariance.
 
@@ -33,30 +33,29 @@ Let's start with an 1D example with 4 pixels.
 $
   bold(x) = vec(x_0, x_1, x_2, x_3)
 $
-You can imagine, each value of x is the brightness of a pixel.
+You can imagine, each value of x is the brightness of a pixel where $x in [0,1]$.
 
-Since we want to discuss shift equivariance, we need to first define what is a shift operation. To make things simple at first, we will assume images have no boundary, which means positions wrap around in a circle. For example, if we shift the image by 1 pixel to the right, the new image will be:
+Since we want to discuss shift equivariance, we need to first define what is a shift operation. To make things simple at first, we will assume images with no boundary, which means positions wrap around in a circle. For example, if we shift the image by 1 pixel to the right, the new image shall be:
 $
   vec(x_0, x_1, x_2, x_3) arrow vec(x_3, x_0, x_1, x_2)
 $
 Let's call this shift operation $S$. Naturally we got
-$S(vec(x_0, x_1, x_2, x_3)) = vec(x_3, x_0, x_1, x_2)$.
+$S vec(x_0, x_1, x_2, x_3) = vec(x_3, x_0, x_1, x_2)$.
 
 #note[
   If you were familiar with group theory, you should notice we've already formed a group $G={I, S, S^2, S^3}$.
   But I want to make some obvious things clear for those who have zero background in group theory.
 
-  - An operation can be repeated multiple times, and we denote that as $S^n$, $n$ is the number of times we apply the operation.
+  - An operation can composite multiple times, and we denote that as $S^n$, $n$ is the number of times we apply the operation.
     $
-      S^2(vec(x_0, x_1, x_2, x_3)) = S(S(vec(x_0, x_1, x_2, x_3))) = S(vec(x_3, x_0, x_1, x_2)) = vec(x_2, x_3, x_0, x_1)
+      S^2 vec(x_0, x_1, x_2, x_3) = vec(x_2, x_3, x_0, x_1)
     $
-  - Also an operation can be composed.
   // TODO
 ]
 
-Now suppose we have an image-processing layer $F$ that takes an image as input and output a feature map with the same size as the input.
+Now suppose we have an image-processing layer $F$ that takes an image as input and output a feature map with the same size.
 $
-  F(vec(x_0, x_1, x_2, x_3)) = vec(y_0, y_1, y_2, y_3)
+  W vec(x_0, x_1, x_2, x_3) = vec(y_0, y_1, y_2, y_3)
 $
 Then the shift equivariance is simply $F(S(x)) = S(F(x))$, meaning *the shift in the input will result in the same shift in the output*.
 
@@ -70,72 +69,64 @@ For example, in the model's perspective, Shift Equivariance means that if the ca
 We will see exactly how that works in the next chapter.
 
 = Deriving CNN
-== Start with Representing our Layer as a Matrix
-// TODO: should we start with matrix?
 
-== Another Mathematical Way to Represent Image
-To align our final derivation with the standard convolution expression you are(should be) familiar with, we need to introduce a way that represents a signal(in this case, an image) as the composition of a series of impulse functions. It takes some time to get used to, so let's take it slowly.
-
-Another way to represent a signal rather than a vector, is to represent it as a mapping(a fancy way to say function) from the "position"(a set of integers) to the value of that position $x: Z mapsto R$.
-// TODO: add more examples
-This kind of representation is widely used in GDL. And you should see that it contains exactly the same information as a vector.
-
-The simplest form of this kind of mapping is an impulse function, which is defined as:
-$
-  delta_0(u) = cases(
-    1\, u = 0,
-    0\, u!= 0
-  ) space, u in Z
-$
-By itself, it means one bright pixel at the origin...
-```
-... 0 0 1 0 0...
-        ^
-        0
-```
-..., which is not very useful. But we can combine it with the shift operation we defined earlier to represent any image. To make things easier to read, we define $delta_v = S^v (delta_0)$. Then any signal $x$ can be assembled out of these one-pixel signals:
-$
-  x(u) = sum_(v in Z) a(v) delta_v (u)
-$
-For simplicity's sake $x$ is also written as $x = sum_(v in Z) a(v) delta_v$. Keep in mind that $delta_v$ is a function.
-
-For example, an image like this:
-```
-position:      -1   0   1
-x:              2   5  -1
-```
-can be represented as $x = 2 delta_(-1) + 5 delta_0 -1 delta_1$.
-
-== Redefine the Shift Operation
+CNN is widely used in CV tasks and label matching problems. To get started, we will focus on the image in one dimension, i.e. a sequence of pixcels. To represent it, we denote image signal $x$ as a function on domain $Omega = (0,dots,n-1)$. Hence, $x_u$= x(u) where $u in Omega$ is a index of the sequence is the britness of the $u^text("th")$ pixcel. The full input image is written as$
+bold(x)= vec(x_0,x_1,dots,x_(n-1)).
+$ At first gance, its a bit akward to define an image in such a perplexing way rather than a simple column vector directly. However, this definition is rather powerful as a language to represent signal for any other netwrok architectures, whiches will be discussed later. A good way to think about it is to imagie domain $Omega$ as the medium where data live in. For an one dimensional image, the space the data live in is simply an ordered discrete grid with index. Whereas for an graph, the space where the nodes live in is an unordered discrete set ${0,dots,n-1}$.
 
 
-== From Shift Equivariance to Convolution
-Let's also start from a linear layer $F$, then we will extend to multiple layers with activation functions. For now, Shift Equivariance and Linearity are all we need to derive the convolution operation.
+Suppose we are dealing with an image classification or feature extraction task where the core geometric structure of the data is spatial translation. If we shift a signal $x$ to the right by $a$ units, we obtain the new signal $S_a x$. Its value at index $u$ is given by:
 
-Plug in the representation of $x$ above to our layer $F$, we have:
-$
-  F(x) = F(sum_(v in Z) a(v) delta_v)
-$
-#note[
-  Just want to remind you that $F$ takes a function $x$(signal) and outputs another function(feature map). The way we represent the feature map is also by a function that takes a position(we call it $u$) and outputs the value of that position in the feature map.
+$ (S_a x)_u = x_((u - a) mod n) $
 
-  So the complete form of $F(x)$ should be:
-  $
-    F(x)(u) = F(sum_(v in Z) a(v) delta_v (u))
-  $
-]
-Because $F$ is linear, we can move it inside the summation:
+On a discrete grid (with periodic boundary conditions), the unit shift $S_1$ corresponds to a simple permutation matrix:
+
+$ S_1 = mat(
+  delim: "[",
+  0, 0, dots, 0, 1;
+  1, 0, dots, 0, 0;
+  0, 1, dots, 0, 0;
+  dots.v, dots.v, dots.down, dots.v, dots.v;
+  0, 0, dots, 1, 0;
+) $
+
+Suppose we want to construct a neural network layer $F(x) = W x$, where $W in bb(R)^(n times n)$ is the weight matrix to be determined). We require this layer to satisfy shift equivariance. In operator form, this means that matrix multiplication by $W$ and the shift operator $S_1$ must commute
+
+$ W (S_1 x) = S_1 (W x) => W S_1 = S_1 W $
+
+
+Using elementary linear algebra, let us examine the restrictions that this commutativity constraint $W S_1 = S_1 W$ imposes on the entries $W_(u, v)$ of matrix $W$. Right-multiplication by the shift operator $(W S_1)_(u, v)$ shifts column $v + 1$ of $W$ to column $v$, which yields
 $
-  F(x) = sum_(v in Z) a(v) F(delta_v)
+(W S_1)_(u, v) = W_(u, (v + 1) mod n)
+$.
+
+Whereas the left-multiplication by the shift operator, $(S_1 W)_(u, v)$shifts row $u - 1$ of $W$ to row $u$, which yields
 $
-Because $F$ is shift equivariant, we can replace $F(delta_v)$ with $S^v (F(delta_0))$.
+(S_1 W)_(u, v) = W_((u - 1) mod n, v)
 $
-  F(x) = sum_(v in Z) a(v) S^v (F(delta_0))
-$
-And you can see that $F(delta_0)$ is a function that's not related neither to the input $x$ nor to $v$. That's what we call as the *kernel*. We denote it as $theta = F(delta_0)$.
-$
-  F(x) = sum_(v in Z) a(v) S^v theta
-$
-#note[
-  It might look a bit confusing at first, but notice that $theta: Z mapsto R$ ($theta(u) = F(delta_0)(u)$), which, recall from the previous chapter, is exactly the same as a vector. And if we assume $u$ is a fixed position, then $S^v theta("const")$ is sim
-]
+From $W S_1 = S_1 W$, we obtain the fundamental constraint equation:
+$ W_(u, v+1 mod n) = W_((u - 1) mod n, v) quad forall u, v $
+letting $u'=u-1$,
+$ W_((u'+1) mod n, (v + 1) mod n) = W_(u, v) quad forall u', v $
+This relations reveals that a shift equivariant matrix must have the same value along its main diagonal and entries parallel to it (with peridic boundary conditions).
+Setting $k = (u - v) mod n$, this demonstrates that the entry $W_(u, v)$ depends solely on the index difference $(u - v)$. If we define an $n$-dimensional parameter vector $theta_k := W_(k, 0)$, then
+
+$ W_(u, v) = theta_((u - v) mod n) $
+
+Substituting this back into $W$, its structure is necessarily
+
+$ W = C(theta) = mat(
+  delim: "[",
+  theta_0, theta_(n-1), theta_(n-2), dots, theta_1;
+  theta_1, theta_0, theta_(n-1), dots, theta_2;
+  theta_2, theta_1, theta_0, dots, theta_3;
+  dots.v, dots.v, dots.v, dots.down, dots.v;
+  theta_(n-1), theta_(n-2), theta_(n-3), dots, theta_0;
+) $
+
+
+Now, consider the $u$-th component of the feature map $y = W x = C(theta) x$:
+
+$ y_u = sum_(v=0)^(n-1) W_(u, v) x_v = sum_(v=0)^(n-1) theta_((u - v) mod n) x_v = (x * theta)_u $
+
+This is precisely the definition of discrete convolution. In other words, the mathematical framework naturally deduces the convolution formula from linearity and shift equivariance
