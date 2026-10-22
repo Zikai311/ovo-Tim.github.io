@@ -85,6 +85,25 @@
   body
 }
 
+/// Colorizes math content on the HTML target.
+///
+/// Typst's HTML export converts equations to MathML and drops text styling,
+/// so `text(fill: c)` and `show sym.x: set text(fill: c)` have no effect on
+/// the web. Emit MathML/CSS color attributes instead, e.g.
+///
+/// ```typ
+/// #show math.equation: it => {
+///   show sym.theta: s => math-color(blue, s)
+///   it
+/// }
+/// ```
+#let math-color(color, body) = if sys-is-html-target {
+  let hex = color.to-hex()
+  html.elem("mstyle", attrs: (mathcolor: hex, style: "color: " + hex), body)
+} else {
+  text(fill: color, body)
+}
+
 #let equation-rules(body) = {
   show math.equation: set text(weight: 400)
   body
