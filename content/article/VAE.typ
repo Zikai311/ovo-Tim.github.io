@@ -13,11 +13,11 @@
   ),
 )
 
-#let qPhi = text(fill: green)[$q_Phi$]
-#let ptheta = text(fill: blue)[$p_theta$]
+#let qPhi = math-color(green, $q_Phi$)
+#let ptheta = math-color(blue, $p_theta$)
 #show math.equation: it => {
-  show sym.theta: set text(fill: blue)
-  show sym.Phi: set text(fill: green)
+  show sym.theta: s => math-color(blue, s)
+  show sym.Phi: s => math-color(green, s)
   it
 }
 
