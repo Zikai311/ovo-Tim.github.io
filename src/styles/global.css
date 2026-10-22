@@ -525,6 +525,17 @@ math {
   color: var(--main-color);
 }
 
+/* Typst's HTML export marks aligned equations with `.aligned` but emits no
+   `columnalign`, so MathML Core centers every cell and the `&` alignment
+   points drift apart. Restore Typst's alternating right/left alignment. */
+math mtable.multiline-equation.aligned > mtr > mtd:nth-child(odd) {
+  text-align: right;
+}
+
+math mtable.multiline-equation.aligned > mtr > mtd:nth-child(even) {
+  text-align: left;
+}
+
 math[display="block"] {
   max-width: 100%;
   overflow-x: auto;
