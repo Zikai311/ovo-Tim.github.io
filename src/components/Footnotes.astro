@@ -1,0 +1,759 @@
+---
+// Turns Typst's bottom-of-article endnotes into:
+//   - margin notes beside the card on wide screens,
+//   - a tap-to-open popover / bottom sheet on narrow screens.
+// Without JavaScript the original endnote list stays untouched.
+---
+
+<script>
+  type RefItem = {
+    ref: HTMLElement;
+    link: HTMLAnchorElement;
+    num: string;
+    html: string;
+  };
+
+  const root = document.documentElement;
+  const SHEET_MAX = 640;
+
+  if (!root.dataset.footnotes) {
+    root.dataset.footnotes = "on";
+    setupFootnotes();
+  }
+
+  function setupFootnotes() {
+    const prose = document.querySelector<HTMLElement>(".prose");
+    const card = prose?.closest<HTMLElement>(".card-content");
+    const section = prose?.querySelector<HTMLElement>('section[role="doc-endnotes"]');
+    if (!prose || !card || !section) return;
+
+    const notes = new Map<string, { num: string; html: string }>();
+    for (const li of section.querySelectorAll<HTMLLIElement>(":scope > ol > li")) {
+      if (!li.id) continue;
+      const back = li.querySelector<HTMLElement>('[role="doc-backlink"]');
+      const num = back?.textContent?.trim() || String(notes.size + 1);
+      // The marker is re-rendered by us, so drop the duplicate backlink.
+      back?.remove();
+      notes.set(li.id, { num, html: li.innerHTML });
+    }
+    if (!notes.size) return;
+
+    const items: RefItem[] = [];
+    const refs = prose.querySelectorAll<HTMLElement>(
+      'sup[role="doc-noteref"], sup:has(> a[href^="#loc-"])',
+    );
+    for (const ref of refs) {
+      const link = ref.querySelector<HTMLAnchorElement>('a[href^="#"]');
+      if (!link) continue;
+      const note = notes.get((link.getAttribute("href") ?? "").slice(1));
+      if (!note) continue;
+      ref.classList.add("fn-ref");
+      link.classList.add("fn-ref-link");
+      items.push({ ref, link, num: note.num, html: note.html });
+    }
+    if (!items.length) return;
+
+    section.remove();
+    card.classList.add("has-fn-notes");
+
+    const asides = new Map<RefItem, HTMLElement>();
+    let popover: HTMLElement | null = null;
+    let scrim: HTMLElement | null = null;
+    let active: RefItem | null = null;
+    let wide = false;
+    let frame = 0;
+
+    // The wide layout shifts the page shell left by 2rem; compensate so the
+    // breakpoint does not depend on whether the mode is already active.
+    const freeSpace = () => {
+      const shift = root.classList.contains("fn-wide")
+        ? 2 * parseFloat(getComputedStyle(root).fontSize)
+        : 0;
+      return innerWidth - card.getBoundingClientRect().right - shift;
+    };
+
+    const canBeWide = () => freeSpace() >= 240;
+
+    const noteWidth = () => {
+      const free = innerWidth - card.getBoundingClientRect().right;
+      return Math.round(Math.max(200, Math.min(288, free - 40)));
+    };
+
+    function setActive(item: RefItem, on: boolean) {
+      item.ref.classList.toggle("is-active", on);
+      asides.get(item)?.classList.toggle("is-active", on);
+    }
+
+    function measure() {
+      if (!wide) return;
+      card!.style.setProperty("--fn-note-w", `${noteWidth()}px`);
+      const cardTop = card!.getBoundingClientRect().top;
+      const ordered = [...asides.entries()]
+        .map(([item, aside]) => ({
+          aside,
+          top: item.ref.getBoundingClientRect().top - cardTop,
+        }))
+        .sort((a, b) => a.top - b.top);
+
+      let cursor = 0;
+      for (const { aside, top } of ordered) {
+        const y = Math.max(top - 2, cursor);
+        aside.style.top = `${Math.round(y)}px`;
+        cursor = y + aside.offsetHeight + 14;
+      }
+    }
+
+    function addAsides() {
+      for (const item of items) {
+        if (asides.has(item)) continue;
+        const aside = document.createElement("aside");
+        aside.className = "fn-sidenote";
+        aside.id = `fn-note-${asides.size + 1}`;
+        aside.setAttribute("role", "doc-footnote");
+        aside.innerHTML =
+          '<span class="fn-sidenote-num" aria-hidden="true"></span><div class="fn-sidenote-body"></div>';
+        aside.querySelector(".fn-sidenote-num")!.textContent = item.num;
+        aside.querySelector(".fn-sidenote-body")!.innerHTML = item.html;
+        card!.append(aside);
+        asides.set(item, aside);
+
+        aside.addEventListener("pointerenter", () => setActive(item, true));
+        aside.addEventListener("pointerleave", () => setActive(item, false));
+        item.link.setAttribute("aria-describedby", aside.id);
+      }
+    }
+
+    function removeAsides() {
+      for (const [item, aside] of asides) {
+        aside.remove();
+        item.ref.classList.remove("is-active");
+        item.link.removeAttribute("aria-describedby");
+      }
+      asides.clear();
+      card!.style.removeProperty("--fn-note-w");
+    }
+
+    function ensurePopover() {
+      if (popover) return popover;
+      popover = document.createElement("div");
+      popover.id = "fn-pop";
+      popover.className = "fn-pop";
+      popover.hidden = true;
+      popover.tabIndex = -1;
+      popover.setAttribute("role", "dialog");
+      popover.setAttribute("aria-modal", "false");
+      popover.innerHTML = [
+        '<span class="fn-sheet-handle" aria-hidden="true"></span>',
+        '<div class="fn-pop-head">',
+        '<span class="fn-pop-num" aria-hidden="true"></span>',
+        '<button class="fn-pop-close" type="button" aria-label="Close footnote">',
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>',
+        "</button>",
+        "</div>",
+        '<div class="fn-pop-body"></div>',
+      ].join("");
+      document.body.append(popover);
+
+      scrim = document.createElement("div");
+      scrim.className = "fn-scrim";
+      scrim.hidden = true;
+      document.body.append(scrim);
+
+      popover
+        .querySelector(".fn-pop-close")
+        ?.addEventListener("click", () => closePop(true));
+      popover.addEventListener("keydown", (event) => {
+        if ((event as KeyboardEvent).key === "Escape") {
+          event.preventDefault();
+          closePop(true);
+        }
+      });
+
+      document.addEventListener("pointerdown", (event) => {
+        if (!popover || popover.hidden) return;
+        const target = event.target as Node;
+        if (popover.contains(target) || active?.link.contains(target)) return;
+        closePop(false);
+      });
+
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && popover && !popover.hidden) closePop(true);
+      });
+
+      window.addEventListener(
+        "scroll",
+        () => {
+          if (active && popover && !popover.hidden && !popover.classList.contains("is-sheet")) {
+            placePop(active);
+          }
+        },
+        { passive: true },
+      );
+
+      return popover;
+    }
+
+    function placePop(item: RefItem) {
+      const pop = popover!;
+      const rect = item.link.getBoundingClientRect();
+      const sheet = innerWidth <= SHEET_MAX;
+      pop.classList.toggle("is-sheet", sheet);
+
+      if (sheet) {
+        pop.style.transform = "";
+        pop.removeAttribute("data-placement");
+        if (scrim) {
+          scrim.hidden = false;
+          requestAnimationFrame(() => scrim?.classList.add("is-visible"));
+        }
+        return;
+      }
+
+      if (scrim) {
+        scrim.classList.remove("is-visible");
+        scrim.hidden = true;
+      }
+
+      const margin = 10;
+      const gap = 10;
+      const vw = innerWidth;
+      const vh = innerHeight;
+      const pw = pop.offsetWidth;
+      const ph = pop.offsetHeight;
+
+      let placement: "top" | "bottom" = "bottom";
+      let top = rect.bottom + gap;
+      if (top + ph > vh - margin && rect.top - ph - gap >= margin) {
+        top = rect.top - ph - gap;
+        placement = "top";
+      }
+      top = Math.min(Math.max(margin, top), Math.max(margin, vh - ph - margin));
+
+      let left = rect.left + rect.width / 2 - pw / 2;
+      left = Math.min(Math.max(margin, left), Math.max(margin, vw - pw - margin));
+
+      pop.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+      pop.dataset.placement = placement;
+      const arrowX = Math.min(Math.max(14, rect.left + rect.width / 2 - left), pw - 14);
+      pop.style.setProperty("--fn-arrow-x", `${Math.round(arrowX)}px`);
+    }
+
+    function openPop(item: RefItem) {
+      const pop = ensurePopover();
+      if (active && active !== item) active.link.setAttribute("aria-expanded", "false");
+      active = item;
+      pop.querySelector(".fn-pop-num")!.textContent = item.num;
+      pop.querySelector(".fn-pop-body")!.innerHTML = item.html;
+      pop.setAttribute("aria-label", `Footnote ${item.num}`);
+      item.link.setAttribute("aria-expanded", "true");
+      pop.classList.remove("is-visible");
+      pop.hidden = false;
+      placePop(item);
+      pop.focus({ preventScroll: true });
+      requestAnimationFrame(() => pop.classList.add("is-visible"));
+    }
+
+    function closePop(restoreFocus: boolean) {
+      if (!popover || popover.hidden) return;
+      const item = active;
+      popover.classList.remove("is-visible");
+      popover.hidden = true;
+      if (scrim) {
+        scrim.classList.remove("is-visible");
+        scrim.hidden = true;
+      }
+      active = null;
+      if (!item) return;
+      item.link.setAttribute("aria-expanded", "false");
+      if (restoreFocus) item.link.focus({ preventScroll: true });
+    }
+
+    function flash(item: RefItem) {
+      const aside = asides.get(item);
+      if (!aside) return;
+      aside.classList.remove("is-flash");
+      void aside.offsetWidth;
+      aside.classList.add("is-flash");
+      aside.addEventListener("animationend", () => aside.classList.remove("is-flash"), {
+        once: true,
+      });
+    }
+
+    function syncMode() {
+      const next = canBeWide();
+      if (next !== wide) {
+        wide = next;
+        root.classList.toggle("fn-wide", wide);
+        if (wide) addAsides();
+        else {
+          closePop(false);
+          removeAsides();
+        }
+      }
+      if (wide) measure();
+    }
+
+    function syncAria() {
+      for (const item of items) {
+        if (wide) {
+          item.link.removeAttribute("aria-haspopup");
+          item.link.removeAttribute("aria-controls");
+          item.link.removeAttribute("aria-expanded");
+        } else {
+          item.link.removeAttribute("aria-describedby");
+          item.link.setAttribute("aria-haspopup", "dialog");
+          item.link.setAttribute("aria-controls", "fn-pop");
+          item.link.setAttribute("aria-expanded", "false");
+        }
+      }
+    }
+
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const wasWide = wide;
+        syncMode();
+        if (wasWide !== wide) syncAria();
+        if (wide) {
+          if (active && popover && !popover.hidden) closePop(false);
+          measure();
+        } else if (active && popover && !popover.hidden) {
+          placePop(active);
+        }
+      });
+    };
+
+    for (const item of items) {
+      item.link.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        if (wide) flash(item);
+        else if (active === item && popover && !popover.hidden) closePop(false);
+        else openPop(item);
+      });
+      item.link.addEventListener("pointerenter", () => {
+        if (wide) setActive(item, true);
+      });
+      item.link.addEventListener("pointerleave", () => {
+        if (wide) setActive(item, false);
+      });
+      item.link.addEventListener("focus", () => {
+        if (wide) setActive(item, true);
+      });
+      item.link.addEventListener("blur", () => setActive(item, false));
+    }
+
+    window.addEventListener("resize", schedule);
+    if (document.fonts?.ready) {
+      document.fonts.ready.then(() => {
+        if (wide) measure();
+      });
+    }
+
+    const observer = new ResizeObserver(() => {
+      if (wide) measure();
+    });
+    observer.observe(prose);
+
+    syncMode();
+    syncAria();
+  }
+</script>
+
+<style is:global>
+  /* ---------------------------------------------------------------- markers */
+
+  .prose sup[role="doc-noteref"] {
+    font-size: 0.72em;
+    line-height: 0;
+    vertical-align: 0.55em;
+    margin-inline: 0.1em;
+  }
+
+  .prose sup[role="doc-noteref"] > a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.7em;
+    height: 1.7em;
+    padding: 0 0.35em;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--accent) 12%, transparent);
+    color: var(--accent);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    text-decoration: none;
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .prose sup[role="doc-noteref"] > a:hover,
+  .prose sup[role="doc-noteref"] > a:focus-visible,
+  .prose sup.fn-ref.is-active > a {
+    background: var(--accent);
+    color: var(--md-sys-color-on-primary);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 20%, transparent);
+    text-decoration: none;
+    outline: none;
+  }
+
+  /* ------------------------------------------------------------ margin notes */
+
+  /* Wide mode reserves the right margin for notes, so nudge the reading
+     column (and the app bar with it) slightly left of dead center. */
+  html.fn-wide main,
+  html.fn-wide header nav {
+    transform: translateX(-2rem);
+  }
+
+  .card-content.has-fn-notes {
+    position: relative;
+  }
+
+  .fn-sidenote {
+    position: absolute;
+    left: calc(100% + 1.5rem);
+    width: var(--fn-note-w, 15rem);
+    margin: 0;
+    padding: 0.1em 0.35em 0.1em 0.9rem;
+    border-left: 2px solid
+      color-mix(in oklab, var(--md-sys-color-outline-variant) 85%, transparent);
+    border-radius: 0 6px 6px 0;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 0.45em;
+    align-items: baseline;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.8rem;
+    line-height: 1.6;
+    text-align: left;
+    overflow-wrap: anywhere;
+    transition:
+      border-color 180ms ease,
+      color 180ms ease;
+  }
+
+  .fn-sidenote::before {
+    content: "";
+    position: absolute;
+    top: 0.5em;
+    left: -6px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--main-bg-color);
+    border: 2px solid
+      color-mix(in oklab, var(--accent) 55%, var(--md-sys-color-outline-variant));
+    transition:
+      border-color 180ms ease,
+      background-color 180ms ease;
+  }
+
+  .fn-sidenote:hover,
+  .fn-sidenote.is-active,
+  .fn-sidenote.is-flash {
+    color: var(--md-sys-color-on-surface);
+    border-left-color: var(--accent);
+  }
+
+  .fn-sidenote:hover::before,
+  .fn-sidenote.is-active::before,
+  .fn-sidenote.is-flash::before {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+
+  .fn-sidenote.is-flash::before {
+    animation: fn-pulse 900ms ease;
+  }
+
+  @keyframes fn-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 40%, transparent);
+    }
+    70% {
+      box-shadow: 0 0 0 8px transparent;
+    }
+    100% {
+      box-shadow: 0 0 0 0 transparent;
+    }
+  }
+
+  .fn-sidenote-num {
+    color: var(--accent);
+    font-size: 0.82rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .fn-sidenote-body {
+    min-width: 0;
+  }
+
+  .fn-sidenote-body > :first-child {
+    margin-block-start: 0;
+  }
+
+  .fn-sidenote-body > :last-child {
+    margin-block-end: 0;
+  }
+
+  .fn-sidenote-body p {
+    margin-block: 0.25em 0.55em;
+  }
+
+  .fn-sidenote-body code {
+    font-size: 0.92em;
+  }
+
+  .fn-sidenote-body img {
+    border-radius: 6px;
+  }
+
+  /* --------------------------------------------------------------- popovers */
+
+  .fn-pop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 400;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    width: min(22rem, calc(100vw - 1.5rem));
+    max-height: min(70vh, 32rem);
+    padding: 0.7rem 0.95rem 0.9rem;
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-medium);
+    box-shadow: var(--md-sys-elevation-3);
+    font-size: 0.875rem;
+    line-height: 1.65;
+    text-align: left;
+    opacity: 0;
+    transition: opacity 140ms ease;
+  }
+
+  .fn-pop[hidden] {
+    display: none;
+  }
+
+  .fn-pop.is-visible {
+    opacity: 1;
+  }
+
+  .fn-pop:focus {
+    outline: none;
+  }
+
+  .fn-pop::before {
+    content: "";
+    position: absolute;
+    left: var(--fn-arrow-x, 50%);
+    width: 10px;
+    height: 10px;
+    background: var(--md-sys-color-surface-container-high);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    transform: translateX(-50%) rotate(45deg);
+  }
+
+  .fn-pop[data-placement="bottom"]::before {
+    top: -6px;
+    border-right: none;
+    border-bottom: none;
+  }
+
+  .fn-pop[data-placement="top"]::before {
+    bottom: -6px;
+    border-left: none;
+    border-top: none;
+  }
+
+  .fn-pop-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: none;
+  }
+
+  .fn-pop-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.6em;
+    height: 1.6em;
+    padding: 0 0.4em;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--accent) 14%, transparent);
+    color: var(--accent);
+    font-size: 0.78rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .fn-pop-close {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--md-sys-color-on-surface-variant);
+    cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+
+  .fn-pop-close:hover {
+    background: var(--md-sys-color-surface-variant);
+    color: var(--md-sys-color-on-surface);
+  }
+
+  .fn-pop-close:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .fn-pop-close svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+  }
+
+  .fn-pop-body {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .fn-pop-body > :first-child {
+    margin-block-start: 0;
+  }
+
+  .fn-pop-body > :last-child {
+    margin-block-end: 0;
+  }
+
+  .fn-pop-body p {
+    margin-block: 0.35em 0.6em;
+  }
+
+  .fn-pop-body code {
+    padding: 0.12em 0.32em;
+    font-size: 0.9em;
+  }
+
+  .fn-sheet-handle {
+    display: none;
+    flex: none;
+    align-self: center;
+    width: 2.25rem;
+    height: 0.3rem;
+    margin: 0 0 0.6rem;
+    border-radius: 999px;
+    background: var(--md-sys-color-outline-variant);
+  }
+
+  .fn-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 399;
+    background: color-mix(in oklab, var(--md-sys-color-scrim) 32%, transparent);
+    opacity: 0;
+    transition: opacity 160ms ease;
+  }
+
+  .fn-scrim[hidden] {
+    display: none;
+  }
+
+  .fn-scrim.is-visible {
+    opacity: 1;
+  }
+
+  /* Bottom sheet on phones: thumb-friendly, Material 3 style. */
+  .fn-pop.is-sheet {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: auto;
+    max-height: min(65vh, 30rem);
+    padding: 0.55rem 1.1rem calc(1rem + env(safe-area-inset-bottom));
+    border-bottom: 0;
+    border-radius: var(--md-sys-shape-extra-large) var(--md-sys-shape-extra-large) 0 0;
+    transform: none;
+    animation: fn-sheet-in 220ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .fn-pop.is-sheet::before {
+    display: none;
+  }
+
+  .fn-pop.is-sheet .fn-sheet-handle {
+    display: block;
+  }
+
+  @keyframes fn-sheet-in {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+
+  /* No-JS fallback: a tidy endnote list at the end of the article. */
+  .prose section[role="doc-endnotes"] {
+    margin-block-start: 2.5rem;
+    padding-block-start: 1rem;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.9em;
+  }
+
+  .prose section[role="doc-endnotes"] ol {
+    display: block;
+    margin: 0;
+    padding: 0;
+  }
+
+  .prose section[role="doc-endnotes"] > ol > li {
+    margin-block: 0.4em;
+    padding-inline-start: 1.5em;
+    text-indent: -1.5em;
+    text-align: left;
+    line-height: 1.55;
+  }
+
+  .prose section[role="doc-endnotes"] [role="doc-backlink"] {
+    margin-inline-end: 0.35em;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .prose section[role="doc-endnotes"] [role="doc-backlink"] a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fn-pop,
+    .fn-scrim,
+    .fn-sidenote,
+    .prose sup[role="doc-noteref"] > a {
+      transition: none;
+      animation: none;
+    }
+  }
+</style>
