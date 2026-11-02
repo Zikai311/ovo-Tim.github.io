@@ -12,8 +12,6 @@
   ),
 )
 
-#text(size: 0.92em)[Cover image: _Oken, Echinoderms and Crinoids_, 1836. The echinoderm is featured by its symmetry.]
-
 = Motivation
 
 Most of the time we consider deep learning as an empirical subject. We are told what works, what doesn't, and what the standard solution is to some specific problems, yet few people have asked for the reason behind them.
