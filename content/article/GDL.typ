@@ -134,6 +134,8 @@ $
   y_i = sum_(j=1)^n W_(i,j) x_j = (bold(x) ast bold(theta))_i.
 $
 
+In vector form,
+
 $
   bold(y) = bold(x) ast bold(theta)
 $
@@ -346,22 +348,17 @@ $
 
 To see why, let's write the adjacency matrix with its row and column indices:
 
-#figure(
-  table(
-    columns: 5,
-    align: center,
-    inset: 5pt,
-    stroke: none,
-    table.hline(stroke: 0.5pt, y: 1),
-    table.vline(stroke: 0.5pt, x: 1),
-    table.header([], [$1$], [$2$], [$dots.c$], [$n$]),
-    [$1$], [$a_(1 1)$], [$a_(1 2)$], [$dots.c$], [$a_(1 n)$],
-    [$2$], [$a_(2 1)$], [$a_(2 2)$], [$dots.c$], [$a_(2 n)$],
-    [$dots.v$], [$dots.v$], [$dots.v$], [$dots.down$], [$dots.v$],
-    [$n$], [$a_(n 1)$], [$a_(n 2)$], [$dots.c$], [$a_(n n)$],
-  ),
-  caption: none,
-)
+$
+  A = mat(
+    delim: "[",
+    augment: #1,
+    "", 1, 2, dots, n;
+    1, a_(1 1), a_(1 2), dots, a_(1 n);
+    2, a_(2 1), a_(2 2), dots, a_(2 n);
+    dots.v, dots.v, dots.v, dots.down, dots.v;
+    n, a_(n 1), a_(n 2), dots, a_(n n);
+  )
+$
 
 The entry $a_(i j)$ records the edge between node $i$ and node $j$. When the nodes are relabelled by $P$, the row index and the column index have both changed. Left multiplication by $P$ permutes the rows, and right multiplication by $P^top$ permutes the columns, hence the permuted matrix is $P A P^top$.
 
