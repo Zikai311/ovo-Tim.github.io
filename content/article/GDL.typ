@@ -12,6 +12,8 @@
   ),
 )
 
+Coauthored with #link("https://github.com/Zikai311")[Zikai Wang].
+
 = Motivation
 
 Most of the time we consider deep learning as an empirical subject. We are told what works, what doesn't, and what the standard solution is to some specific problems, yet few people have asked for the reason behind them.
